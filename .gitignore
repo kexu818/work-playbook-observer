@@ -1,0 +1,25 @@
+.build/
+dist/
+__pycache__/
+*.pyc
+# Local records and machine-specific project tracking never ship.
+evidence/
+PROJECT_STATUS.md
+SOURCE_OF_TRUTH.md
+docs/DESIGN.md
+.DS_Store
+.env
+.env.*
+.codex/
+auth.json
+.credentials.json
+state.json
+sources.json
+*.jsonl
+*.log
+*.pem
+*.key
+*.p12
+runtime/
+exports/
+analyses/
