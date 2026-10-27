@@ -20,6 +20,12 @@ A native macOS workbench that turns local Computer History records into evidence
 
 应用自身不录屏、不做 OCR、不增加监听器。输入来自已启用的 Computer History，或本应用已有的导出包。Computer History 的可用性、权限和文件格式取决于上游版本；这里的适配器使用本地文件，并非官方稳定 API。
 
+## 候选阅读展示
+
+0.2.6 支持可选的本机阅读稿：按「这次发生了什么、值得保留的方法、下次什么时候用、还需要补什么」组织概览，提供可展开的检查清单与来源说明。原始分析可完整回看，反馈仍绑定原候选；导出明确使用原始分析，不包含阅读稿改写。
+
+阅读稿保存在应用数据目录的 `presentations.json`，需要按候选与来源准备。没有匹配阅读稿时显示原始候选，当前不会为后续新分析自动生成阅读稿。格式与启用方法见[开发说明](docs/DEVELOPMENT_HANDOFF.md#本机阅读样稿)和[合成配置示例](examples/reading-presentation.example.json)。个人阅读稿和真实截图不随源码分发。
+
 ## 构建与运行
 
 需要 macOS 14+、Xcode 15+ 开发工具及 Python 3.9+。当前版本在 Apple Silicon、macOS 27.2、Xcode 27 上验证；旧系统仍需实机验证。
@@ -67,9 +73,13 @@ CLI 依次从 `PLAYBOOK_CODEX_BIN`、`PATH`、`~/.local/bin/codex`、`/opt/homeb
 ```sh
 python3 -m unittest discover -s tests -v
 python3 backend/history.py --help
+swiftc Sources/PlaybookWorkbench/CandidatePresentation.swift tests/test_candidate_presentation.swift -o .build/test-candidate-presentation
+.build/test-candidate-presentation
 ```
 
 41 项测试覆盖只读快照、时间边界、损坏与部分行、路径越界、原格式导出、候选来源约束、反馈持久化、隔离认证清理和超时。隔离运行器使用 fake CLI 测试，不会在测试中调用真实模型或上传工作记录。
+
+另有 8 项合成 Swift 检查，覆盖阅读稿与候选/来源绑定，以及保留试用历史的草稿状态展示。
 
 - `Sources/PlaybookWorkbench/`：SwiftUI 应用。
 - `backend/history.py`：本地文件适配、导出、候选与反馈。

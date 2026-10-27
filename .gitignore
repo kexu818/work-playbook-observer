@@ -15,6 +15,7 @@ auth.json
 .credentials.json
 state.json
 sources.json
+presentations.json
 *.jsonl
 *.log
 *.pem

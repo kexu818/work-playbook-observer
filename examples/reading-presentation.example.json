@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "candidates": [
+    {
+      "candidateID": "candidate-a",
+      "originalTitle": "Original",
+      "originalSourceIDs": ["source-a"],
+      "title": "整理项目周报时，先核对每项结论的依据",
+      "context": "合成项目 · 阅读展示示例",
+      "observed": "合成记录描述了整理项目进度的过程，没有提供实际交付结果。",
+      "method": "逐项列出结论与对应记录，将缺少依据的内容保留为待确认。",
+      "trigger": "准备汇总项目进度并形成周报时。",
+      "gap": "补齐真实工作记录，并在实际整理中验证是否减少遗漏。",
+      "checklistTitle": "周报核对清单",
+      "sourceNotes": [
+        {
+          "sourceID": "source-a",
+          "title": "记录支持了整理需求，尚未证明交付完成",
+          "fact": "这是合成来源说明，不对应任何真实用户活动。"
+        }
+      ],
+      "checklist": [
+        {
+          "title": "逐项核对结论",
+          "action": "将每项进度结论对应到来源记录。",
+          "check": "有依据的结论与待确认内容分开标明。",
+          "result": "一份带来源和缺口的进度草稿。"
+        }
+      ]
+    }
+  ]
+}

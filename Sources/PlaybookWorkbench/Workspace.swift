@@ -148,7 +148,8 @@ struct CandidatesView: View {
     var visible: [CandidateEntry] {
         entries.filter { entry in
             (filter == "all" || (filter == "draft" ? entry.candidate.status == "draft" : entry.candidate.status != "draft")) &&
-            (query.isEmpty || (entry.candidate.title + entry.candidate.why + entry.candidate.trigger).localizedCaseInsensitiveContains(query))
+            (query.isEmpty || (entry.candidate.title + entry.candidate.why + entry.candidate.trigger +
+                (model.presentations[entry.id].map { $0.title + $0.context + $0.method } ?? "")).localizedCaseInsensitiveContains(query))
         }
     }
     var current: CandidateEntry? { visible.first { $0.id == selection } }
@@ -169,12 +170,12 @@ struct CandidatesView: View {
                             Section(localTime(analysis.createdAt)) {
                                 ForEach(items) { entry in
                                     VStack(alignment: .leading, spacing: 7) {
-                                        Text(entry.candidate.title).font(.system(size: 13, weight: .semibold)).lineSpacing(3).lineLimit(2)
-                                        Text(entry.candidate.trigger).font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(3).lineLimit(2)
+                                        Text(model.presentations[entry.id]?.title ?? entry.candidate.title).font(.system(size: 13, weight: .semibold)).lineSpacing(3).lineLimit(2)
+                                        Text(model.presentations[entry.id]?.context ?? entry.candidate.trigger).font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(3).lineLimit(2)
                                         HStack(spacing: 6) {
-                                            Text(statusName(entry.candidate.status))
+                                            Text(model.presentations[entry.id] != nil && entry.candidate.status == "draft" ? readingDraftStatus(hasFeedback: !entry.candidate.feedback.isEmpty) : statusName(entry.candidate.status))
                                             Text("·")
-                                            Text("\(entry.candidate.sourceIds.count) 条依据")
+                                            Text(model.presentations[entry.id] == nil ? "\(entry.candidate.sourceIds.count) 条依据" : "\(entry.candidate.sourceIds.count) 份来源记录")
                                         }.font(.system(size: 10)).foregroundStyle(.secondary)
                                     }.padding(.vertical, 8).frame(height: 112, alignment: .leading).tag(entry.id)
                                 }
@@ -218,11 +219,16 @@ struct CandidateDetail: View {
     @State private var tab = "draft"
     @State private var note = ""
     @State private var feedbackStatus = "partial"
+    @State private var showChecklist = false
+    @State private var checklistRequest = 0
+    var presentation: CandidatePresentation? { model.presentations[candidate.id] }
     var body: some View {
         ScrollViewReader { proxy in
         ScrollView {
             VStack(alignment: .leading, spacing: 25) {
-                VStack(alignment: .leading, spacing: 15) {
+                if let p = presentation {
+                    readingHeader(p)
+                } else { VStack(alignment: .leading, spacing: 15) {
                     HStack {
                         Text(localTime(analysis.createdAt)).font(.caption).foregroundStyle(.tertiary)
                         Spacer()
@@ -230,26 +236,119 @@ struct CandidateDetail: View {
                     }
                     Text(candidate.title).font(.system(size: 27, weight: .bold)).lineSpacing(4).fixedSize(horizontal: false, vertical: true)
                     if tab == "draft" { Text(candidate.why).font(.system(size: 13)).foregroundStyle(.secondary).lineSpacing(6).fixedSize(horizontal: false, vertical: true) }
-                }.id("candidate-top")
-                if tab == "draft" { draft }
-                else if tab == "evidence" { evidence }
+                } }
+                if tab == "draft" {
+                    if let p = presentation { readingOverview(p) }
+                    else { draft }
+                }
+                else if tab == "evidence" {
+                    if let p = presentation { readingEvidence(p) }
+                    else { evidence }
+                }
                 else { feedback }
-            }.frame(maxWidth: 700, alignment: .leading).padding(.horizontal, 36).padding(.vertical, 25).frame(maxWidth: .infinity)
+            }.id("candidate-top").frame(maxWidth: 700, alignment: .leading).padding(.horizontal, 36).padding(.vertical, 25).frame(maxWidth: .infinity)
         }
         .onChange(of: tab) { _, _ in proxy.scrollTo("candidate-top", anchor: .top) }
+        .onChange(of: checklistRequest) { _, _ in
+            DispatchQueue.main.async { withAnimation { proxy.scrollTo("reading-checklist", anchor: .top) } }
+        }
         }
         .background(Palette.canvas)
         .toolbar {
             ToolbarItem(placement: .automatic) {
                 Picker("候选内容", selection: $tab) {
-                    Text("草稿").tag("draft"); Text("依据 \(candidate.sourceIds.count)").tag("evidence"); Text("反馈").tag("feedback")
-                }.pickerStyle(.segmented).labelsHidden().frame(width: 210)
+                    Text(presentation == nil ? "草稿" : "方法概览").tag("draft")
+                    Text(presentation == nil ? "依据 \(candidate.sourceIds.count)" : "工作依据").tag("evidence")
+                    Text(presentation == nil ? "反馈" : "试用反馈").tag("feedback")
+                }.pickerStyle(.segmented).labelsHidden().frame(width: presentation == nil ? 210 : 260)
             }
             ToolbarItem(placement: .primaryAction) {
-                Button { model.saveDraft(candidate.id) } label: { Label("导出草稿", systemImage: "square.and.arrow.up") }.disabled(model.busy)
+                Button { model.saveDraft(candidate.id) } label: { Label(presentation == nil ? "导出草稿" : "导出原始草稿", systemImage: "square.and.arrow.up") }.disabled(model.busy)
+                    .help(presentation == nil ? "导出模型生成的草稿" : "导出原始分析；当前阅读样稿单独保存在本机")
             }
         }
         .onAppear { feedbackStatus = candidate.status == "draft" ? "partial" : candidate.status }
+    }
+    func readingHeader(_ p: CandidatePresentation) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(p.context).font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
+            Text(p.title).font(.system(size: 27, weight: .bold)).lineSpacing(3).fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 7) {
+                Text("阅读样稿")
+                Text("·")
+                Text(candidate.status == "draft" ? "AI 整理 · \(readingDraftStatus(hasFeedback: !candidate.feedback.isEmpty))" : statusName(candidate.status))
+            }.font(.system(size: 11)).foregroundStyle(.secondary)
+        }
+    }
+    func readingBlock(_ title: String, text: String) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title).font(.system(size: 13, weight: .semibold))
+            Text(text).font(.system(size: 13)).lineSpacing(4).textSelection(.enabled)
+        }.frame(maxWidth: .infinity, alignment: .leading)
+    }
+    func readingOverview(_ p: CandidatePresentation) -> some View {
+        VStack(alignment: .leading, spacing: 20) {
+            readingBlock("这次发生了什么", text: p.observed)
+            readingBlock("值得保留的方法 · AI 建议", text: p.method)
+            readingBlock("下次什么时候用", text: p.trigger)
+            readingBlock("还需要补什么", text: p.gap)
+            HStack(spacing: 16) {
+                Button("查看检查清单") { showChecklist = true; checklistRequest += 1 }.buttonStyle(.borderedProminent)
+                Button("核对这次工作记录") { tab = "evidence" }.buttonStyle(.plain).foregroundStyle(Palette.accent)
+            }.controlSize(.small)
+            Text("记录范围：\(localTime(analysis.window.start))—\(localTime(analysis.window.end))\n本次分析纳入 \(analysis.coverage.includedSummaries) 份摘要与 \(analysis.coverage.includedEvents) 条抽样事件" + (analysis.coverage.truncated ? "，正文有节选。" : "。"))
+                .font(.system(size: 10)).foregroundStyle(.secondary).lineSpacing(3)
+            Divider()
+            DisclosureGroup(isExpanded: $showChecklist) {
+                VStack(alignment: .leading, spacing: 22) {
+                    Text("以下是建议步骤，仍需在真实工作中试用。阅读不代表工作已完成。")
+                        .font(.system(size: 11)).foregroundStyle(.secondary)
+                    ForEach(Array(p.checklist.enumerated()), id: \.offset) { index, step in
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("\(index + 1). \(step.title)").font(.system(size: 14, weight: .semibold))
+                            Text(step.action).font(.system(size: 13)).lineSpacing(4).textSelection(.enabled)
+                            Text("怎么判断：\(step.check)\n留下什么：\(step.result)")
+                                .font(.system(size: 12)).foregroundStyle(.secondary).lineSpacing(5).textSelection(.enabled)
+                        }
+                    }
+                }.padding(.top, 14)
+            } label: { Text(p.checklistTitle ?? "操作检查清单").font(.system(size: 14, weight: .semibold)) }
+            .id("reading-checklist")
+            DisclosureGroup("查看原始分析草稿") {
+                VStack(alignment: .leading, spacing: 14) {
+                    Text(candidate.title).font(.headline)
+                    Text(candidate.why).font(.system(size: 12)).lineSpacing(4).textSelection(.enabled)
+                    draft
+                }.padding(.top, 12)
+            }.font(.system(size: 11)).foregroundStyle(.secondary)
+        }
+    }
+    func readingEvidence(_ p: CandidatePresentation) -> some View {
+        VStack(alignment: .leading, spacing: 23) {
+            Text("这些记录支持了什么？").font(.system(size: 16, weight: .semibold))
+            Text("关联 \(candidate.sourceIds.count) 份来源记录；摘要可能重叠，数量不代表独立发生次数。以下只说明记录当时的情况。")
+                .font(.system(size: 12)).foregroundStyle(.secondary).lineSpacing(4)
+            ForEach(p.sourceNotes, id: \.sourceID) { note in
+                if let source = analysis.sources.first(where: { $0.id == note.sourceID }) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            Text(source.type == "summary" ? "摘要时间 · \(localTime(source.at))" : "事件时间 · \(localTime(source.at))")
+                            Spacer()
+                            Text(source.type == "summary" ? "工作摘要" : "原始事件")
+                        }.font(.system(size: 10)).foregroundStyle(.secondary)
+                        Text(note.title).font(.system(size: 14, weight: .semibold))
+                        Text(note.fact).font(.system(size: 13)).lineSpacing(5).textSelection(.enabled)
+                        DisclosureGroup("查看对应记录节选") {
+                            ReadableDocument(text: source.text).padding(.top, 10)
+                            Text(source.id).font(.system(size: 9, design: .monospaced)).foregroundStyle(.tertiary)
+                        }.font(.system(size: 11)).foregroundStyle(.secondary)
+                        Divider()
+                    }
+                }
+            }
+            Text("这些来源可用于核对推荐理由，尚不能证明建议的方法已在实际复用中有效。")
+                .font(.system(size: 11)).foregroundStyle(.secondary).lineSpacing(4)
+        }
     }
     var draft: some View {
         VStack(alignment: .leading, spacing: 27) {

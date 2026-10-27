@@ -45,6 +45,7 @@ struct Draft: Decodable { let title, markdown: String }
 @MainActor final class Workbench: ObservableObject {
     @Published var history: History?
     @Published var analyses: [Analysis] = []
+    @Published var presentations: [String: CandidatePresentation] = [:]
     @Published var exports: [Exported] = []
     @Published var hours = 24
     @Published var busy = false
@@ -99,8 +100,26 @@ struct Draft: Decodable { let title, markdown: String }
             }
             self.history = try await self.execute("status")
             let result: Analyses = try await self.execute("results"); self.analyses = result.analyses
+            self.loadPresentations()
             let exported: Exports = try await self.execute("exports"); self.exports = exported.exports
         }
+    }
+    func loadPresentations() {
+        presentations = [:]
+        let file = URL(fileURLWithPath: dataRoot).appendingPathComponent("presentations.json")
+        guard FileManager.default.fileExists(atPath: file.path) else { return }
+        do {
+            let value = try JSONDecoder().decode(CandidatePresentationFile.self, from: Data(contentsOf: file))
+            guard value.schemaVersion == 1 else { throw CocoaError(.fileReadCorruptFile) }
+            for analysis in analyses {
+                for candidate in analysis.candidates {
+                    if let draft = value.candidates.first(where: {
+                        $0.applies(to: candidate.id, title: candidate.title, sourceIDs: candidate.sourceIds,
+                                   availableIDs: Set(analysis.sources.map(\.id)))
+                    }) { presentations[candidate.id] = draft }
+                }
+            }
+        } catch { message = "阅读样稿未能读取，已显示原始分析" }
     }
     func chooseSource(package: Bool = false) {
         let panel = NSOpenPanel(); panel.canChooseDirectories = true; panel.canChooseFiles = false; panel.allowsMultipleSelection = false
@@ -128,7 +147,12 @@ struct Draft: Decodable { let title, markdown: String }
     func saveDraft(_ id: String) {
         perform {
             let draft: Draft = try await self.execute("draft", extra: ["--candidate", id])
-            let panel = NSSavePanel(); panel.title = "导出 Playbook 草稿"; panel.allowedContentTypes = [.plainText]
+            let panel = NSSavePanel()
+            panel.title = self.presentations[id] == nil ? "导出 Playbook 草稿" : "导出原始分析草稿"
+            if self.presentations[id] != nil {
+                panel.message = "文件包含原始模型分析，不包含当前阅读样稿的改写。导出不会改变候选状态。"
+            }
+            panel.allowedContentTypes = [.plainText]
             panel.nameFieldStringValue = draft.title.replacingOccurrences(of: "/", with: "-") + ".md"
             panel.canCreateDirectories = true
             if panel.runModal() == .OK, let url = panel.url {
