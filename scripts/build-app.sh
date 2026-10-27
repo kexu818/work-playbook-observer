@@ -15,6 +15,7 @@ cp backend/codex_runner.py "$app/Contents/Resources/codex_runner.py"
 task_icon_assets="$PWD/.build/Branding.xcassets"
 task_icon_set="$task_icon_assets/AppIcon.appiconset"
 mkdir -p "$task_icon_set"
+swift scripts/render-app-icon.swift assets/branding/playbook-icon-v1.png .build/AppIcon-normalized.png
 python3 - "$task_icon_assets" <<'PY'
 import json, pathlib, subprocess, sys
 catalog = pathlib.Path(sys.argv[1])
@@ -23,7 +24,7 @@ for size in (16, 32, 128, 256, 512):
     for scale in (1, 2):
         name = f'icon-{size}@{scale}x.png'
         subprocess.run(['sips', '-z', str(size * scale), str(size * scale),
-                        'assets/branding/playbook-icon-v1.png', '--out', str(catalog / 'AppIcon.appiconset' / name)],
+                        '.build/AppIcon-normalized.png', '--out', str(catalog / 'AppIcon.appiconset' / name)],
                        check=True, stdout=subprocess.DEVNULL)
         images.append({'idiom': 'mac', 'size': f'{size}x{size}', 'scale': f'{scale}x', 'filename': name})
 (catalog / 'Contents.json').write_text(json.dumps({'info': {'author': 'xcode', 'version': 1}}))
@@ -39,8 +40,8 @@ cat > "$app/Contents/Info.plist" <<'PLIST'
 <key>CFBundleExecutable</key><string>PlaybookWorkbench</string>
 <key>CFBundleIdentifier</key><string>io.github.kexu818.work-playbook-observer</string>
 <key>CFBundleName</key><string>Playbook 工作台</string>
-<key>CFBundleVersion</key><string>3</string>
-<key>CFBundleShortVersionString</key><string>0.2.2</string>
+<key>CFBundleVersion</key><string>5</string>
+<key>CFBundleShortVersionString</key><string>0.2.4</string>
 <key>LSMinimumSystemVersion</key><string>14.0</string>
 <key>NSHighResolutionCapable</key><true/>
 </dict></plist>

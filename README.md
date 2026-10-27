@@ -69,7 +69,7 @@ python3 -m unittest discover -s tests -v
 python3 backend/history.py --help
 ```
 
-39 项测试覆盖只读快照、时间边界、损坏与部分行、路径越界、原格式导出、候选来源约束、反馈持久化、隔离认证清理和超时。隔离运行器使用 fake CLI 测试，不会在测试中调用真实模型或上传工作记录。
+41 项测试覆盖只读快照、时间边界、损坏与部分行、路径越界、原格式导出、候选来源约束、反馈持久化、隔离认证清理和超时。隔离运行器使用 fake CLI 测试，不会在测试中调用真实模型或上传工作记录。
 
 - `Sources/PlaybookWorkbench/`：SwiftUI 应用。
 - `backend/history.py`：本地文件适配、导出、候选与反馈。

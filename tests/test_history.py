@@ -155,6 +155,30 @@ class HistoryTests(unittest.TestCase):
         self.assertEqual(packet['coverage']['includedEvents'], 1)
         self.assertEqual(snap['eventCount'], 2)
 
+    def test_analysis_shares_budget_across_all_day_summaries_and_events(self):
+        self.put([self.event(f'2026-10-26T07:{i:02d}:00Z') for i in range(60)])
+        snap = self.snapshot()
+        snap['summaries'] = [dict(id=f's-{i}', timestamp=f'2026-10-26T07:{i:02d}:00Z',
+                                  level='10min', text=str(i) + 'x' * 3000) for i in range(24)]
+        packet = h.analysis_packet(snap)
+        summaries = [s for s in packet['sources'] if s['type'] == 'summary']
+        events = [s for s in packet['sources'] if s['type'] == 'event']
+        self.assertEqual(len(summaries), 24)
+        self.assertEqual(summaries[-1]['id'], 's-23')
+        self.assertEqual(events[0]['id'], snap['events'][0]['id'])
+        self.assertEqual(events[-1]['id'], snap['events'][-1]['id'])
+        self.assertLessEqual(packet['coverage']['textCharacters'], 18000)
+        self.assertTrue(packet['coverage']['truncated'])
+
+    def test_oversized_summary_list_samples_both_ends_of_interval(self):
+        self.put([])
+        snap = self.snapshot()
+        snap['summaries'] = [dict(id=f's-{i}', timestamp=f'{i:04d}', level='10min',
+                                  text='x' * 3000) for i in range(100)]
+        packet = h.analysis_packet(snap, max_chars=1200)
+        self.assertEqual([s['id'] for s in packet['sources']], ['s-0', 's-33', 's-66', 's-99'])
+        self.assertLessEqual(packet['coverage']['textCharacters'], 1200)
+
     def test_export_history_survives_reload(self):
         self.put([self.event()]); result = h.export_snapshot(self.snapshot(), self.data)
         exports = h.export_list(self.data)['exports']

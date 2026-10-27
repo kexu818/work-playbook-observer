@@ -236,30 +236,41 @@ def export_snapshot(snapshot, data_root):
 
 def analysis_packet(snapshot, max_chars=18000, max_events=180):
     sources, used, clipped = [], 0, False
-    # Prefer broad summaries; raw events remain separately labelled evidence.
-    rows = sorted(snapshot['summaries'], key=lambda x: (x['level'] != '6h', x['timestamp']))
-    for row in rows:
-        text = row['text'][:6000]
-        clipped = clipped or len(text) < len(row['text'])
-        if used + len(text) > max_chars:
-            continue
-        sources.append({'id': row['id'], 'type': 'summary', 'at': row['timestamp'], 'level': row['level'], 'text': text})
-        used += len(text)
+    def spread(rows, count):
+        if not rows or count <= 0:
+            return []
+        count = min(len(rows), count)
+        indices = sorted(set(round(i * (len(rows) - 1) / max(1, count - 1)) for i in range(count)))
+        return [rows[i] for i in indices]
+
     def own_event(event):
         app = event['_event'].get('app')
         bundle = app.get('bundleIdentifier') if isinstance(app, dict) else None
         return event['app'] in ['Playbook 工作台', 'PlaybookWorkbench'] or bundle == 'io.github.kexu818.work-playbook-observer'
     events = [event for event in snapshot['events'] if not own_event(event)]
-    indices = sorted(set(round(i * (len(events) - 1) / max(1, min(len(events), max_events) - 1))
-                         for i in range(min(len(events), max_events)))) if events else []
-    for i in indices:
-        row = events[i]
-        text = row['preview'][:900]
+    # Share the budget across the whole interval, rather than filling it with
+    # the earliest summaries and starving recent work and raw evidence.
+    rows = sorted(snapshot['summaries'], key=lambda x: x['timestamp'])
+    summary_budget = int(max_chars * 0.7) if events else max_chars
+    selected = spread(rows, max(1, summary_budget // 300)) if summary_budget else []
+    remaining_weight = sum(3 if row['level'] == '6h' else 1 for row in selected)
+    for row in selected:
+        weight = 3 if row['level'] == '6h' else 1
+        allowance = min(6000, (summary_budget - used) * weight // remaining_weight)
+        text = row['text'][:allowance]
+        clipped = clipped or len(text) < len(row['text'])
+        remaining_weight -= weight
+        if text:
+            sources.append({'id': row['id'], 'type': 'summary', 'at': row['timestamp'], 'level': row['level'], 'text': text})
+            used += len(text)
+    selected_events = spread(events, min(max_events, max(1, (max_chars - used) // 300)))
+    for index, row in enumerate(selected_events):
+        allowance = min(900, (max_chars - used) // (len(selected_events) - index))
+        text = row['preview'][:allowance]
         clipped = clipped or len(text) < len(row['preview'])
-        if used + len(text) > max_chars:
-            continue
-        sources.append({'id': row['id'], 'type': 'event', 'at': row['timestamp'], 'app': row['app'], 'kind': row['kind'], 'text': text})
-        used += len(text)
+        if text:
+            sources.append({'id': row['id'], 'type': 'event', 'at': row['timestamp'], 'app': row['app'], 'kind': row['kind'], 'text': text})
+            used += len(text)
     if not sources:
         raise ValueError('所选时段没有可分析的记录')
     return {'window': {'start': snapshot['start'], 'end': snapshot['end']}, 'sources': sources,
@@ -404,6 +415,8 @@ def run_analysis(packet, data_root, runner=RUNNER, timeout=360):
         if details.get('isolated_home_removed') is not True:
             raise ValueError('隔离运行未确认认证清理，已停止；回执位于分析目录')
         if code != 0:
+            if code == 2 and details.get('protected_unchanged') is False:
+                raise ValueError('分析期间Codex正式配置发生变化，隔离完整性校验未通过；结果未入库，未回退API')
             raise ValueError('Codex分析未完成（退出码%d），可能登录、额度或网络受限；未回退API' % code)
         result = folder / 'runtime/result.md'
         parsed = parse_candidates(result.read_text(), {source['id'] for source in packet['sources']})

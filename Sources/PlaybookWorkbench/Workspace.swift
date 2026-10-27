@@ -456,7 +456,21 @@ struct ExportView: View {
     }
 }
 
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // AppIcon is compiled from the padded, rounded icon canvas, never
+        // directly from the full-bleed artwork.
+        if let icon = NSImage(named: "AppIcon") {
+            NSApplication.shared.applicationIconImage = icon
+        } else if let url = Bundle.main.url(forResource: "AppIcon", withExtension: "icns"),
+                  let icon = NSImage(contentsOf: url) {
+            NSApplication.shared.applicationIconImage = icon
+        }
+    }
+}
+
 @main struct PlaybookWorkbenchApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var model = Workbench()
     var body: some Scene {
         WindowGroup { ContentView().environmentObject(model).preferredColorScheme(previewScheme).frame(minWidth: 1000, minHeight: 660) }
